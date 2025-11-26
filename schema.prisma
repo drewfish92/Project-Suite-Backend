@@ -1,0 +1,473 @@
+// Project Suite Pro - Database Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id                    String   @id @default(uuid())
+  name                  String
+  industry              String?
+  companySize           String?
+  address               String?
+  phone                 String?
+  email                 String?
+  logoUrl               String?
+  subscriptionTier      SubscriptionTier @default(starter)
+  subscriptionStatus    SubscriptionStatus @default(trial)
+  trialEndDate          DateTime?
+  billingEmail          String?
+  stripeCustomerId      String?   @unique
+  stripeSubscriptionId  String?   @unique
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  users                 User[]
+  projects              Project[]
+  contacts              Contact[]
+  invoices              Invoice[]
+  quotes                Quote[]
+  scheduleAssignments   ScheduleAssignment[]
+  timeEntries           TimeEntry[]
+  payrollRecords        PayrollRecord[]
+  expenses              Expense[]
+  emailLogs             EmailLog[]
+  subscriptionEvents    SubscriptionEvent[]
+  auditLogs             AuditLog[]
+
+  @@map("organizations")
+}
+
+model User {
+  id                      String    @id @default(uuid())
+  organizationId          String
+  email                   String    @unique
+  passwordHash            String
+  firstName               String
+  lastName                String
+  role                    UserRole  @default(staff)
+  phone                   String?
+  avatarUrl               String?
+  emailVerified           Boolean   @default(false)
+  emailVerificationToken  String?   @unique
+  passwordResetToken      String?   @unique
+  passwordResetExpires    DateTime?
+  lastLogin               DateTime?
+  isActive                Boolean   @default(true)
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  organization            Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  createdProjects         Project[] @relation("ProjectCreator")
+  createdInvoices         Invoice[] @relation("InvoiceCreator")
+  createdQuotes           Quote[] @relation("QuoteCreator")
+  scheduleAssignments     ScheduleAssignment[] @relation("AssignedUser")
+  createdAssignments      ScheduleAssignment[] @relation("AssignmentCreator")
+  timeEntries             TimeEntry[] @relation("TimeEntryUser")
+  approvedTimeEntries     TimeEntry[] @relation("TimeEntryApprover")
+  payrollRecords          PayrollRecord[] @relation("PayrollUser")
+  createdPayrollRecords   PayrollRecord[] @relation("PayrollCreator")
+  expenses                Expense[] @relation("ExpenseUser")
+  approvedExpenses        Expense[] @relation("ExpenseApprover")
+  auditLogs               AuditLog[]
+
+  @@map("users")
+}
+
+model Project {
+  id              String        @id @default(uuid())
+  organizationId  String
+  name            String
+  description     String?
+  clientId        String?
+  projectNumber   String
+  status          ProjectStatus @default(draft)
+  startDate       DateTime?
+  endDate         DateTime?
+  budget          Decimal?      @db.Decimal(12, 2)
+  address         String?
+  createdBy       String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client          Contact?     @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  creator         User         @relation("ProjectCreator", fields: [createdBy], references: [id])
+  
+  invoices        Invoice[]
+  quotes          Quote[]
+  scheduleAssignments ScheduleAssignment[]
+  timeEntries     TimeEntry[]
+  expenses        Expense[]
+
+  @@unique([organizationId, projectNumber])
+  @@map("projects")
+}
+
+model Contact {
+  id              String      @id @default(uuid())
+  organizationId  String
+  type            ContactType
+  companyName     String?
+  contactPerson   String
+  email           String?
+  phone           String?
+  mobile          String?
+  address         String?
+  notes           String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  projects        Project[]
+  invoices        Invoice[]
+  quotes          Quote[]
+
+  @@map("contacts")
+}
+
+model Invoice {
+  id              String        @id @default(uuid())
+  organizationId  String
+  invoiceNumber   String
+  projectId       String?
+  clientId        String
+  status          InvoiceStatus @default(draft)
+  issueDate       DateTime
+  dueDate         DateTime
+  subtotal        Decimal       @db.Decimal(12, 2)
+  taxRate         Decimal       @default(15) @db.Decimal(5, 2)
+  taxAmount       Decimal       @db.Decimal(12, 2)
+  total           Decimal       @db.Decimal(12, 2)
+  amountPaid      Decimal       @default(0) @db.Decimal(12, 2)
+  notes           String?
+  terms           String?
+  paymentDetails  String?
+  sentAt          DateTime?
+  paidAt          DateTime?
+  createdBy       String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project         Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  client          Contact      @relation(fields: [clientId], references: [id])
+  creator         User         @relation("InvoiceCreator", fields: [createdBy], references: [id])
+  
+  items           InvoiceItem[]
+
+  @@unique([organizationId, invoiceNumber])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String  @id @default(uuid())
+  invoiceId   String
+  description String
+  quantity    Decimal @db.Decimal(10, 2)
+  unitPrice   Decimal @db.Decimal(12, 2)
+  amount      Decimal @db.Decimal(12, 2)
+  sortOrder   Int     @default(0)
+
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@map("invoice_items")
+}
+
+model Quote {
+  id            String      @id @default(uuid())
+  organizationId String
+  quoteNumber   String
+  projectId     String?
+  clientId      String
+  status        QuoteStatus @default(draft)
+  issueDate     DateTime
+  expiryDate    DateTime
+  subtotal      Decimal     @db.Decimal(12, 2)
+  taxRate       Decimal     @default(15) @db.Decimal(5, 2)
+  taxAmount     Decimal     @db.Decimal(12, 2)
+  total         Decimal     @db.Decimal(12, 2)
+  notes         String?
+  terms         String?
+  sentAt        DateTime?
+  acceptedAt    DateTime?
+  createdBy     String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project       Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  client        Contact      @relation(fields: [clientId], references: [id])
+  creator       User         @relation("QuoteCreator", fields: [createdBy], references: [id])
+  
+  items         QuoteItem[]
+
+  @@unique([organizationId, quoteNumber])
+  @@map("quotes")
+}
+
+model QuoteItem {
+  id          String  @id @default(uuid())
+  quoteId     String
+  description String
+  quantity    Decimal @db.Decimal(10, 2)
+  unitPrice   Decimal @db.Decimal(12, 2)
+  amount      Decimal @db.Decimal(12, 2)
+  sortOrder   Int     @default(0)
+
+  quote       Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@map("quote_items")
+}
+
+model ScheduleAssignment {
+  id              String            @id @default(uuid())
+  organizationId  String
+  userId          String
+  projectId       String
+  jobNumber       String?
+  jobTitle        String
+  startDate       DateTime
+  endDate         DateTime
+  startTime       String?
+  endTime         String?
+  status          AssignmentStatus  @default(scheduled)
+  notes           String?
+  createdBy       String
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user            User         @relation("AssignedUser", fields: [userId], references: [id])
+  project         Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator         User         @relation("AssignmentCreator", fields: [createdBy], references: [id])
+
+  @@map("schedule_assignments")
+}
+
+model TimeEntry {
+  id                  String    @id @default(uuid())
+  organizationId      String
+  userId              String
+  projectId           String
+  clockIn             DateTime
+  clockOut            DateTime?
+  clockInLatitude     Decimal?  @db.Decimal(10, 8)
+  clockInLongitude    Decimal?  @db.Decimal(11, 8)
+  clockOutLatitude    Decimal?  @db.Decimal(10, 8)
+  clockOutLongitude   Decimal?  @db.Decimal(11, 8)
+  breakDuration       Int?      // minutes
+  totalHours          Decimal?  @db.Decimal(5, 2)
+  notes               String?
+  approvedBy          String?
+  approvedAt          DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user                User         @relation("TimeEntryUser", fields: [userId], references: [id])
+  project             Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  approver            User?        @relation("TimeEntryApprover", fields: [approvedBy], references: [id])
+
+  @@map("time_entries")
+}
+
+model PayrollRecord {
+  id                String         @id @default(uuid())
+  organizationId    String
+  userId            String
+  payPeriodStart    DateTime
+  payPeriodEnd      DateTime
+  regularHours      Decimal        @db.Decimal(6, 2)
+  overtimeHours     Decimal        @default(0) @db.Decimal(6, 2)
+  hourlyRate        Decimal        @db.Decimal(8, 2)
+  overtimeRate      Decimal        @db.Decimal(8, 2)
+  grossPay          Decimal        @db.Decimal(10, 2)
+  deductions        Decimal        @default(0) @db.Decimal(10, 2)
+  netPay            Decimal        @db.Decimal(10, 2)
+  status            PayrollStatus  @default(draft)
+  paymentDate       DateTime?
+  notes             String?
+  createdBy         String
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user              User         @relation("PayrollUser", fields: [userId], references: [id])
+  creator           User         @relation("PayrollCreator", fields: [createdBy], references: [id])
+
+  @@map("payroll_records")
+}
+
+model Expense {
+  id              String        @id @default(uuid())
+  organizationId  String
+  projectId       String?
+  userId          String
+  category        String
+  description     String
+  amount          Decimal       @db.Decimal(10, 2)
+  expenseDate     DateTime
+  receiptUrl      String?
+  status          ExpenseStatus @default(pending)
+  approvedBy      String?
+  approvedAt      DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project         Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  user            User         @relation("ExpenseUser", fields: [userId], references: [id])
+  approver        User?        @relation("ExpenseApprover", fields: [approvedBy], references: [id])
+
+  @@map("expenses")
+}
+
+model EmailLog {
+  id              String    @id @default(uuid())
+  organizationId  String
+  userId          String?
+  toEmail         String
+  fromEmail       String
+  subject         String
+  body            String
+  type            EmailType
+  status          EmailStatus @default(pending)
+  sentAt          DateTime?
+  errorMessage    String?
+  createdAt       DateTime  @default(now())
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("email_logs")
+}
+
+model SubscriptionEvent {
+  id              String   @id @default(uuid())
+  organizationId  String
+  eventType       String
+  eventData       Json
+  stripeEventId   String?  @unique
+  createdAt       DateTime @default(now())
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("subscription_events")
+}
+
+model AuditLog {
+  id              String   @id @default(uuid())
+  organizationId  String
+  userId          String
+  action          String
+  resourceType    String
+  resourceId      String?
+  changes         Json?
+  ipAddress       String?
+  userAgent       String?
+  createdAt       DateTime @default(now())
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user            User         @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// Enums
+
+enum SubscriptionTier {
+  starter
+  professional
+  enterprise
+}
+
+enum SubscriptionStatus {
+  trial
+  active
+  past_due
+  cancelled
+  suspended
+}
+
+enum UserRole {
+  admin
+  manager
+  staff
+  accountant
+}
+
+enum ProjectStatus {
+  draft
+  active
+  on_hold
+  completed
+  cancelled
+}
+
+enum ContactType {
+  client
+  supplier
+  subcontractor
+}
+
+enum InvoiceStatus {
+  draft
+  sent
+  paid
+  overdue
+  cancelled
+}
+
+enum QuoteStatus {
+  draft
+  sent
+  accepted
+  declined
+  expired
+}
+
+enum AssignmentStatus {
+  scheduled
+  in_progress
+  completed
+  cancelled
+}
+
+enum PayrollStatus {
+  draft
+  processed
+  paid
+}
+
+enum ExpenseStatus {
+  pending
+  approved
+  rejected
+  reimbursed
+}
+
+enum EmailType {
+  welcome
+  verification
+  invoice
+  quote
+  payslip
+  trial_reminder
+  payment_success
+  payment_failed
+  password_reset
+}
+
+enum EmailStatus {
+  pending
+  sent
+  failed
+}
+
