@@ -107,7 +107,7 @@ app.use(errorHandler);
 
 // Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   logger.info(`🚀 Project Suite Pro API running on port ${PORT}`);
   logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
@@ -119,5 +119,3 @@ process.on('SIGTERM', () => {
     logger.info('HTTP server closed');
   });
 });
-
-module.exports = app;
